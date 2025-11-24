@@ -1,325 +1,41 @@
-<!DOCTYPE html>
-<html lang="vi">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Hệ thống Thi Trực Tuyến AI</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
-    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
-    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
-    
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
-    <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+<div class="form-container">
+  <h3>TẠO KỲ THI MỚI</h3>
 
-    <style>
-        body { background-color: #f3f4f6; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
-        .katex { font-size: 1.2em; color: #1e3a8a; } /* Toán to rõ, màu xanh đậm */
-    </style>
-</head>
-<body>
-    <div id="root"></div>
+  <div class="row">
+    <input type="text" placeholder="Tên trường (VD: THCS Nguyễn Công Trứ)" />
+    <input type="text" placeholder="Tên kỳ thi (VD: Kiểm tra 1 tiết)" />
+  </div>
 
-    <script type="text/babel">
-        const { useState, useEffect, useRef } = React;
-        const API_BASE = "https://hoangthiencm-giangbai.hf.space"; 
+  <div class="row">
+    <input type="text" placeholder="Môn thi (Toán)" />
+    <input type="text" placeholder="Lớp (6/3)" />
+  </div>
 
-        // --- COMPONENT RENDER TOÁN ---
-        const MathText = ({ text }) => {
-            const ref = useRef();
-            useEffect(() => {
-                if (!text) return;
-                // Tách chuỗi theo dấu $
-                const parts = text.split(/(\$[^$]+\$)/g);
-                ref.current.innerHTML = "";
-                parts.forEach(part => {
-                    if (part.startsWith("$") && part.endsWith("$")) {
-                        const span = document.createElement("span");
-                        try {
-                            katex.render(part.slice(1, -1), span, { throwOnError: false });
-                        } catch { span.innerText = part; }
-                        ref.current.appendChild(span);
-                    } else {
-                        ref.current.appendChild(document.createTextNode(part));
-                    }
-                });
-            }, [text]);
-            return <span ref={ref} />;
-        };
+  <div class="form-group">
+    <label>Danh sách API Key (.txt):</label>
+    <input type="file" id="apiKeyFile" accept=".txt" />
+    <small>Hỗ trợ file .txt, mỗi dòng 1 key. Tự động đổi key khi hết quota.</small>
+  </div>
 
-        // --- VIEW 1: GIÁO VIÊN UPLOAD ---
-        const TeacherView = ({ onExamReady }) => {
-            const [form, setForm] = useState({ title: "", school: "", subject: "", grade: "" });
-            const [apiKey, setApiKey] = useState(localStorage.getItem("api_key") || "");
-            const [loading, setLoading] = useState(false);
-            const fileRef = useRef();
+  <div class="row">
+    <div class="col">
+      <label>Thời gian làm bài (phút):</label>
+      <input type="number" min="1" value="45" />
+    </div>
+    <div class="col">
+      <label>Mở đề lúc:</label>
+      <input type="datetime-local" />
+    </div>
+    <div class="col">
+      <label>Đóng đề lúc (Khóa):</label>
+      <input type="datetime-local" />
+    </div>
+  </div>
 
-            const handleUpload = async () => {
-                if (!apiKey) return alert("Chưa nhập API Key!");
-                localStorage.setItem("api_key", apiKey); // Tự nhớ Key
+  <div class="upload-area">
+    <input type="file" id="examContent" />
+    <p>Hỗ trợ PDF và Word. Tự động nhận diện công thức Toán.</p>
+  </div>
 
-                const file = fileRef.current.files[0];
-                if (!file) return alert("Chưa chọn file đề!");
-
-                setLoading(true);
-                const fd = new FormData();
-                fd.append("file", file);
-                fd.append("title", form.title);
-                fd.append("school", form.school);
-                fd.append("subject", form.subject);
-                fd.append("grade", form.grade);
-
-                try {
-                    const res = await axios.post(`${API_BASE}/api/exam/upload`, fd, {
-                        headers: { "x-gemini-api-key": apiKey }
-                    });
-                    alert(`✅ Đã nhận đề thi thành công!\nSẵn sàng tổ chức thi.`);
-                    onExamReady(res.data.exam_id);
-                } catch (e) {
-                    alert("Lỗi: " + (e.response?.data?.detail || e.message));
-                } finally { setLoading(false); }
-            };
-
-            return (
-                <div className="max-w-3xl mx-auto mt-10 bg-white p-8 rounded-xl shadow-lg">
-                    <h2 className="text-2xl font-bold text-indigo-700 mb-6"><i className="fas fa-chalkboard-teacher"></i> TẠO KỲ THI MỚI</h2>
-                    <div className="grid grid-cols-2 gap-4 mb-4">
-                        <input className="border p-2 rounded" placeholder="Tên Trường" value={form.school} onChange={e=>setForm({...form, school: e.target.value})} />
-                        <input className="border p-2 rounded" placeholder="Tên Kỳ Thi" value={form.title} onChange={e=>setForm({...form, title: e.target.value})} />
-                        <input className="border p-2 rounded" placeholder="Môn học" value={form.subject} onChange={e=>setForm({...form, subject: e.target.value})} />
-                        <input className="border p-2 rounded" placeholder="Lớp/Khối" value={form.grade} onChange={e=>setForm({...form, grade: e.target.value})} />
-                    </div>
-                    <div className="mb-4">
-                        <label className="block font-bold mb-1">API Key (Gemini):</label>
-                        <input className="w-full border p-2 rounded bg-gray-50" type="password" value={apiKey} onChange={e=>setApiKey(e.target.value)} placeholder="Dán key vào đây (Hệ thống sẽ tự nhớ)" />
-                    </div>
-                    <div className="mb-6 border-2 border-dashed border-gray-300 p-6 text-center rounded-lg">
-                        <input ref={fileRef} type="file" accept=".docx,.pdf" />
-                        <p className="text-sm text-gray-500 mt-2">Hỗ trợ PDF và Word. Tự động nhận diện công thức Toán.</p>
-                    </div>
-                    <button onClick={handleUpload} disabled={loading} className="w-full bg-indigo-600 text-white py-3 rounded font-bold hover:bg-indigo-700">
-                        {loading ? "Đang xử lý..." : "TẢI ĐỀ LÊN & TẠO MÃ QR"}
-                    </button>
-                </div>
-            );
-        };
-
-        // --- VIEW 2: MÀN HÌNH CHỜ (LOBBY) ---
-        const LobbyView = ({ examId, onTeacherMonitor }) => {
-            const qrRef = useRef();
-            useEffect(() => {
-                const link = `${window.location.href.split('?')[0]}?mode=student&examId=${examId}`;
-                new QRCode(qrRef.current, { text: link, width: 200, height: 200 });
-            }, []);
-
-            return (
-                <div className="max-w-4xl mx-auto mt-10 grid grid-cols-1 md:grid-cols-2 gap-8">
-                    <div className="bg-white p-8 rounded-xl shadow-lg text-center">
-                        <h2 className="text-xl font-bold text-green-600 mb-4">PHÒNG THI SẴN SÀNG</h2>
-                        <div ref={qrRef} className="inline-block p-2 border rounded mx-auto mb-4"></div>
-                        <p className="text-gray-500 text-sm">Học sinh quét mã để vào thi</p>
-                        <div className="mt-4 bg-blue-50 p-3 rounded text-blue-800 font-mono text-sm">
-                            ID Phòng: <b>{examId}</b>
-                        </div>
-                    </div>
-                    
-                    <div className="bg-white p-8 rounded-xl shadow-lg flex flex-col justify-center items-center">
-                        <i className="fas fa-chart-line text-6xl text-indigo-200 mb-4"></i>
-                        <h3 className="text-xl font-bold mb-2">Khu vực Giáo viên</h3>
-                        <p className="text-gray-500 mb-6 text-center">Theo dõi danh sách nộp bài, điểm số và nhận xét của AI.</p>
-                        <button onClick={onTeacherMonitor} className="bg-indigo-600 text-white px-6 py-2 rounded-full font-bold">
-                            XEM KẾT QUẢ THI
-                        </button>
-                    </div>
-                </div>
-            );
-        };
-
-        // --- VIEW 3: HỌC SINH THI ---
-        const StudentView = ({ examId }) => {
-            const [step, setStep] = useState(0);
-            const [info, setInfo] = useState({ name: "", class: "", sbd: "" });
-            const [exam, setExam] = useState(null);
-            const [answers, setAnswers] = useState({});
-            const [submitted, setSubmitted] = useState(null);
-
-            useEffect(() => {
-                axios.get(`${API_BASE}/api/exam/get/${examId}`)
-                    .then(res => setExam(res.data))
-                    .catch(() => alert("Không tìm thấy đề thi!"));
-            }, [examId]);
-
-            const handleStart = () => {
-                if (!info.name || !info.sbd) return alert("Vui lòng nhập đủ thông tin!");
-                setStep(1);
-                // Trộn đề ở Client (Realtime Shuffling)
-                if (exam && exam.questions) {
-                    const shuffled = [...exam.questions].sort(() => Math.random() - 0.5);
-                    setExam({ ...exam, questions: shuffled });
-                }
-            };
-
-            const handleSubmit = async () => {
-                if (!confirm("Nộp bài nhé?")) return;
-                // Map lại câu trả lời về index gốc (để server biết)
-                const payload = {
-                    exam_id: examId,
-                    student_name: info.name,
-                    sbd: info.sbd,
-                    student_class: info.class,
-                    answers: {} // Logic mapping ở đây đơn giản hóa cho demo
-                };
-                // Ở bản đơn giản này, ta gửi index câu hỏi sau khi trộn
-                // Server demo sẽ nhận và chấm (Cần logic mapping kỹ hơn ở bản Pro)
-                exam.questions.forEach((q, idx) => {
-                    payload.answers[idx] = answers[idx];
-                });
-
-                try {
-                    const key = localStorage.getItem("api_key") || ""; // Học sinh có thể không cần key nếu server config sẵn
-                    const res = await axios.post(`${API_BASE}/api/exam/submit`, payload, {
-                        headers: { "x-gemini-api-key": key }
-                    });
-                    setSubmitted(res.data);
-                } catch (e) { alert("Lỗi nộp bài: " + e.message); }
-            };
-
-            if (submitted) {
-                return (
-                    <div className="min-h-screen bg-green-50 flex items-center justify-center p-4">
-                        <div className="bg-white p-8 rounded-xl shadow-xl max-w-md w-full text-center">
-                            <div className="text-6xl mb-4">🎉</div>
-                            <h2 className="text-2xl font-bold text-green-700 mb-2">Hoàn thành!</h2>
-                            <p className="text-4xl font-extrabold text-gray-800 mb-4">{submitted.score} điểm</p>
-                            <div className="bg-yellow-50 p-4 rounded text-left text-sm text-gray-700 border border-yellow-200">
-                                <strong>🤖 AI Nhận xét:</strong>
-                                <p className="mt-1 italic">"{submitted.feedback}"</p>
-                            </div>
-                        </div>
-                    </div>
-                );
-            }
-
-            if (step === 0) {
-                return (
-                    <div className="max-w-md mx-auto mt-20 bg-white p-8 rounded-xl shadow-lg">
-                        <h2 className="text-xl font-bold mb-4 text-center">Thông tin thí sinh</h2>
-                        <div className="space-y-3">
-                            <input className="w-full border p-2 rounded" placeholder="Họ và tên" value={info.name} onChange={e=>setInfo({...info, name: e.target.value})} />
-                            <input className="w-full border p-2 rounded" placeholder="Lớp" value={info.class} onChange={e=>setInfo({...info, class: e.target.value})} />
-                            <input className="w-full border p-2 rounded" placeholder="Số Báo Danh (SBD)" value={info.sbd} onChange={e=>setInfo({...info, sbd: e.target.value})} />
-                            <button onClick={handleStart} className="w-full bg-blue-600 text-white py-3 rounded font-bold">VÀO THI</button>
-                        </div>
-                    </div>
-                );
-            }
-
-            return (
-                <div className="max-w-3xl mx-auto p-4 pb-20">
-                    <div className="sticky top-0 bg-white p-4 shadow-md z-10 flex justify-between items-center mb-4 rounded-lg">
-                        <div>
-                            <div className="font-bold">{info.name}</div>
-                            <div className="text-xs text-gray-500">SBD: {info.sbd}</div>
-                        </div>
-                        <button onClick={handleSubmit} className="bg-green-600 text-white px-4 py-2 rounded font-bold">Nộp Bài</button>
-                    </div>
-                    {exam && exam.questions.map((q, idx) => (
-                        <div key={idx} className="bg-white p-6 rounded-lg shadow-sm mb-4">
-                            <div className="flex gap-2 mb-3">
-                                <span className="font-bold text-blue-600">Câu {idx+1}:</span>
-                                <MathText text={q.question} />
-                            </div>
-                            <div className="space-y-2 ml-4">
-                                {q.options.map((opt, oIdx) => (
-                                    <div key={oIdx} onClick={()=>setAnswers({...answers, [idx]: oIdx})}
-                                         className={`p-3 border rounded cursor-pointer hover:bg-gray-50 flex gap-2 ${answers[idx]===oIdx ? 'border-blue-500 bg-blue-50' : ''}`}>
-                                        <span className="font-bold text-gray-500">{String.fromCharCode(65+oIdx)}.</span>
-                                        <MathText text={opt} />
-                                    </div>
-                                ))}
-                            </div>
-                        </div>
-                    ))}
-                </div>
-            );
-        };
-
-        // --- VIEW 4: KẾT QUẢ (GIÁO VIÊN) ---
-        const ResultsDashboard = ({ examId, onBack }) => {
-            const [results, setResults] = useState([]);
-            useEffect(() => {
-                const fetch = async () => {
-                    const res = await axios.get(`${API_BASE}/api/exam/results/${examId}`);
-                    setResults(res.data);
-                };
-                fetch();
-                const interval = setInterval(fetch, 5000); // Tự động cập nhật mỗi 5s
-                return () => clearInterval(interval);
-            }, [examId]);
-
-            return (
-                <div className="max-w-6xl mx-auto p-6">
-                    <button onClick={onBack} className="mb-4 text-gray-500 hover:text-black"><i className="fas fa-arrow-left"></i> Quay lại</button>
-                    <h2 className="text-2xl font-bold mb-4">Kết Quả Thi Trực Tuyến</h2>
-                    <div className="bg-white rounded-xl shadow overflow-hidden">
-                        <table className="w-full text-left border-collapse">
-                            <thead className="bg-gray-100 text-gray-600 uppercase text-sm">
-                                <tr>
-                                    <th className="p-4">SBD</th>
-                                    <th className="p-4">Họ Tên</th>
-                                    <th className="p-4">Lớp</th>
-                                    <th className="p-4">Điểm</th>
-                                    <th className="p-4">Đúng/Tổng</th>
-                                    <th className="p-4 w-1/3">AI Nhận Xét</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {results.map((r, i) => (
-                                    <tr key={i} className="border-t hover:bg-gray-50">
-                                        <td className="p-4 font-mono text-blue-600">{r.sbd}</td>
-                                        <td className="p-4 font-bold">{r.student_name}</td>
-                                        <td className="p-4">{r.student_class}</td>
-                                        <td className="p-4 font-bold text-lg">{r.score}</td>
-                                        <td className="p-4">{r.correct_count}/{r.total_questions}</td>
-                                        <td className="p-4 text-sm text-gray-600 italic">"{r.ai_feedback}"</td>
-                                    </tr>
-                                ))}
-                            </tbody>
-                        </table>
-                        {results.length === 0 && <p className="p-8 text-center text-gray-500">Chưa có bài nộp nào.</p>}
-                    </div>
-                </div>
-            );
-        };
-
-        // --- APP MAIN ---
-        const App = () => {
-            const [view, setView] = useState("upload");
-            const [examId, setExamId] = useState(null);
-
-            useEffect(() => {
-                // Check link xem có phải học sinh không
-                const params = new URLSearchParams(window.location.search);
-                if (params.get("mode") === "student") {
-                    setExamId(params.get("examId"));
-                    setView("student");
-                }
-            }, []);
-
-            return (
-                <div>
-                    {view === "upload" && <TeacherView onExamReady={(id) => { setExamId(id); setView("lobby"); }} />}
-                    {view === "lobby" && <LobbyView examId={examId} onTeacherMonitor={() => setView("results")} />}
-                    {view === "student" && <StudentView examId={examId} />}
-                    {view === "results" && <ResultsDashboard examId={examId} onBack={() => setView("lobby")} />}
-                </div>
-            );
-        };
-
-        const root = ReactDOM.createRoot(document.getElementById('root'));
-        root.render(<App />);
-    </script>
-</body>
-</html>
+  <button class="btn-submit">TẢI ĐỀ LÊN & TẠO MÃ QR + LINK</button>
+</div>
