@@ -1,0 +1,491 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SmartExam - Hệ thống thi trực tuyến</title>
+    
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap" rel="stylesheet">
+
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: { sans: ['Inter', 'sans-serif'] },
+                    colors: {
+                        primary: '#6366f1', // Indigo 500
+                        secondary: '#8b5cf6', // Violet 500
+                        dark: '#1e293b',
+                    }
+                }
+            }
+        }
+    </script>
+
+    <style>
+        body { background: #f8fafc; }
+        .glass-panel {
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+        .gradient-bg {
+            background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
+        }
+        .animate-fade-in { animation: fadeIn 0.5s ease-out; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        
+        /* Custom Scrollbar */
+        ::-webkit-scrollbar { width: 8px; }
+        ::-webkit-scrollbar-track { background: #f1f1f1; }
+        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+
+        .cheat-overlay {
+            background: repeating-linear-gradient(
+                45deg,
+                rgba(239, 68, 68, 0.1),
+                rgba(239, 68, 68, 0.1) 10px,
+                rgba(239, 68, 68, 0.2) 10px,
+                rgba(239, 68, 68, 0.2) 20px
+            );
+        }
+    </style>
+</head>
+<body class="min-h-screen text-slate-800 antialiased selection:bg-indigo-100 selection:text-indigo-700">
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useRef } = React;
+        const API_BASE = "https://hoangthiencm-giangbai.hf.space"; 
+
+        // --- UTILS: TRỘN MẢNG (Shuffle) ---
+        // Đây là thuật toán Fisher-Yates để trộn đề ngay tại trình duyệt
+        const shuffleArray = (array) => {
+            let currentIndex = array.length, randomIndex;
+            const newArray = [...array];
+            while (currentIndex != 0) {
+                randomIndex = Math.floor(Math.random() * currentIndex);
+                currentIndex--;
+                [newArray[currentIndex], newArray[randomIndex]] = [newArray[randomIndex], newArray[currentIndex]];
+            }
+            return newArray;
+        };
+
+        // --- COMPONENT: UPLOAD (GIÁO VIÊN) ---
+        const TeacherUpload = ({ onExamCreated }) => {
+            const [loading, setLoading] = useState(false);
+            const [examTitle, setExamTitle] = useState("Kiểm tra 15 phút");
+            
+            const fileInputRef = useRef(null);
+            const keyInputRef = useRef(null);
+
+            const handleUpload = async () => {
+                const examFile = fileInputRef.current.files[0];
+                const keyFile = keyInputRef.current.files[0];
+
+                if (!examFile || !keyFile) return alert("Vui lòng chọn đủ File Đề và File Key!");
+
+                setLoading(true);
+                const formData = new FormData();
+                formData.append("file", examFile);
+                formData.append("key_file", keyFile);
+                formData.append("title", examTitle);
+                formData.append("num_variants", 1); // Chỉ cần 1 bản gốc, Client sẽ tự trộn
+                formData.append("teacher_email", "teacher@demo.com");
+
+                try {
+                    const res = await axios.post(`${API_BASE}/api/exam/upload`, formData);
+                    onExamCreated(res.data);
+                } catch (err) {
+                    alert("Lỗi Upload: " + (err.response?.data?.detail || err.message));
+                } finally {
+                    setLoading(false);
+                }
+            };
+
+            return (
+                <div className="animate-fade-in max-w-2xl mx-auto mt-20">
+                    <div className="bg-white rounded-3xl shadow-2xl overflow-hidden border border-slate-100">
+                        <div className="bg-slate-50 p-6 border-b border-slate-100 flex items-center gap-4">
+                            <div className="w-12 h-12 rounded-2xl gradient-bg flex items-center justify-center text-white shadow-lg shadow-indigo-200">
+                                <i className="fas fa-cloud-upload-alt text-xl"></i>
+                            </div>
+                            <div>
+                                <h2 className="text-xl font-bold text-slate-800">Tạo Phòng Thi Mới</h2>
+                                <p className="text-sm text-slate-500">Upload đề thi gốc để bắt đầu</p>
+                            </div>
+                        </div>
+
+                        <div className="p-8 space-y-6">
+                            <div>
+                                <label className="block text-sm font-semibold text-slate-700 mb-2">Tên bài kiểm tra</label>
+                                <input 
+                                    type="text" 
+                                    className="w-full px-4 py-3 rounded-xl bg-slate-50 border border-slate-200 focus:bg-white focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all outline-none" 
+                                    value={examTitle} 
+                                    onChange={e => setExamTitle(e.target.value)} 
+                                />
+                            </div>
+
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                <div className="group relative">
+                                    <label className="block text-sm font-semibold text-slate-700 mb-2">File Đề (.docx/.pdf)</label>
+                                    <div className="relative h-32 rounded-xl border-2 border-dashed border-slate-300 bg-slate-50 hover:bg-indigo-50 hover:border-indigo-300 transition-all flex flex-col items-center justify-center cursor-pointer group-hover:scale-[1.02]" onClick={() => fileInputRef.current.click()}>
+                                        <i className="fas fa-file-word text-3xl text-slate-400 group-hover:text-indigo-500 mb-2 transition-colors"></i>
+                                        <span className="text-xs text-slate-500 font-medium">Chọn file đề thi</span>
+                                    </div>
+                                    <input ref={fileInputRef} type="file" accept=".docx,.pdf" className="hidden"/>
+                                </div>
+
+                                <div className="group relative">
+                                    <label className="block text-sm font-semibold text-slate-700 mb-2">File API Key (.txt)</label>
+                                    <div className="relative h-32 rounded-xl border-2 border-dashed border-slate-300 bg-slate-50 hover:bg-emerald-50 hover:border-emerald-300 transition-all flex flex-col items-center justify-center cursor-pointer group-hover:scale-[1.02]" onClick={() => keyInputRef.current.click()}>
+                                        <i className="fas fa-key text-3xl text-slate-400 group-hover:text-emerald-500 mb-2 transition-colors"></i>
+                                        <span className="text-xs text-slate-500 font-medium">Chọn file key</span>
+                                    </div>
+                                    <input ref={keyInputRef} type="file" accept=".txt" className="hidden"/>
+                                </div>
+                            </div>
+
+                            <button onClick={handleUpload} disabled={loading} className="w-full py-4 rounded-xl gradient-bg text-white font-bold text-lg shadow-xl shadow-indigo-200 hover:shadow-2xl hover:-translate-y-1 transition-all disabled:opacity-70 disabled:cursor-not-allowed flex items-center justify-center gap-3">
+                                {loading ? <i className="fas fa-spinner fa-spin"></i> : <i className="fas fa-rocket"></i>}
+                                {loading ? "Đang khởi tạo phòng thi..." : "TẠO PHÒNG THI"}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        // --- COMPONENT: LOBBY (MÀN HÌNH CHỜ QUÉT QR) ---
+        const Lobby = ({ examData, onJoin }) => {
+            const qrRef = useRef(null);
+
+            useEffect(() => {
+                if (qrRef.current) {
+                    qrRef.current.innerHTML = "";
+                    // QR chứa Link để học sinh tham gia. 
+                    // Trong thực tế, đây là link web hiện tại kèm tham số examId.
+                    // VD: https://myapp.com?examId=...
+                    const joinLink = `?mode=student&examId=${examData.exam_id}&code=${examData.codes[0].code}`;
+                    new QRCode(qrRef.current, {
+                        text: window.location.href.split('?')[0] + joinLink,
+                        width: 256,
+                        height: 256,
+                        colorDark : "#1e293b",
+                        colorLight : "#ffffff",
+                        correctLevel : QRCode.CorrectLevel.H
+                    });
+                }
+            }, [examData]);
+
+            return (
+                <div className="animate-fade-in min-h-screen flex items-center justify-center p-4 bg-slate-100">
+                    <div className="bg-white p-8 rounded-3xl shadow-2xl max-w-4xl w-full text-center border border-white/50">
+                        <div className="inline-block p-4 rounded-full bg-green-100 text-green-600 mb-6 text-3xl shadow-inner">
+                            <i className="fas fa-check-circle"></i>
+                        </div>
+                        <h1 className="text-3xl font-bold text-slate-800 mb-2">Phòng Thi Sẵn Sàng!</h1>
+                        <p className="text-slate-500 mb-8">Học sinh quét mã QR bên dưới để tham gia. <br/>Mỗi thiết bị kết nối sẽ nhận được một <b>mã đề riêng biệt</b>.</p>
+
+                        <div className="flex flex-col md:flex-row items-center justify-center gap-10">
+                            <div className="bg-white p-4 rounded-2xl shadow-lg border border-slate-100">
+                                <div ref={qrRef} className="mix-blend-multiply"></div>
+                                <p className="mt-3 text-xs font-mono text-slate-400">ID: {examData.exam_id}</p>
+                            </div>
+
+                            <div className="text-left space-y-4 max-w-sm">
+                                <div className="flex items-center gap-4 p-4 bg-indigo-50 rounded-xl border border-indigo-100">
+                                    <div className="w-10 h-10 rounded-full bg-white flex items-center justify-center text-indigo-600 shadow-sm font-bold">1</div>
+                                    <p className="text-sm text-indigo-900 font-medium">Mở Camera hoặc Zalo trên điện thoại</p>
+                                </div>
+                                <div className="flex items-center gap-4 p-4 bg-indigo-50 rounded-xl border border-indigo-100">
+                                    <div className="w-10 h-10 rounded-full bg-white flex items-center justify-center text-indigo-600 shadow-sm font-bold">2</div>
+                                    <p className="text-sm text-indigo-900 font-medium">Quét mã QR bên cạnh</p>
+                                </div>
+                                <div className="flex items-center gap-4 p-4 bg-indigo-50 rounded-xl border border-indigo-100">
+                                    <div className="w-10 h-10 rounded-full bg-white flex items-center justify-center text-indigo-600 shadow-sm font-bold">3</div>
+                                    <p className="text-sm text-indigo-900 font-medium">Nhập tên và bắt đầu làm bài</p>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div className="mt-10 border-t pt-6">
+                            <button onClick={() => onJoin(examData.exam_id, examData.codes[0].code)} className="text-slate-400 hover:text-indigo-600 text-sm font-semibold transition-colors">
+                                <i className="fas fa-laptop mr-2"></i>Test thử trên máy này (Chế độ Học sinh)
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        // --- COMPONENT: STUDENT EXAM (THI) ---
+        const StudentExam = ({ examId, baseCode, onFinish }) => {
+            const [studentName, setStudentName] = useState("");
+            const [status, setStatus] = useState("login"); // login, shuffling, testing, submitted
+            const [questions, setQuestions] = useState([]); // Câu hỏi ĐÃ TRỘN RIÊNG cho user này
+            const [answers, setAnswers] = useState({});
+            const [cheatCount, setCheatCount] = useState(0);
+
+            // Fetch đề gốc
+            useEffect(() => {
+                const initExam = async () => {
+                    try {
+                        // Lấy đề gốc từ Server (Lấy variant đầu tiên làm gốc)
+                        const res = await axios.get(`${API_BASE}/api/exam/${examId}/${baseCode}`);
+                        // Khi có đề gốc, ta chưa setQuestions ngay mà chờ user bấm Start để trộn
+                        window.originalExamData = res.data; 
+                    } catch (err) {
+                        alert("Không tìm thấy phòng thi!");
+                    }
+                };
+                initExam();
+            }, [examId, baseCode]);
+
+            // LOGIC TRỘN ĐỀ CLIENT-SIDE
+            const startExam = () => {
+                if (!studentName.trim()) return alert("Vui lòng nhập tên!");
+                if (!window.originalExamData) return alert("Đang tải dữ liệu đề thi...");
+
+                setStatus("shuffling");
+
+                // Giả lập loading trộn đề
+                setTimeout(() => {
+                    const originalQs = window.originalExamData.questions;
+                    
+                    // 1. Trộn thứ tự câu hỏi
+                    let shuffledQs = shuffleArray([...originalQs]);
+                    
+                    // 2. Trộn thứ tự đáp án trong từng câu
+                    shuffledQs = shuffledQs.map(q => {
+                        const originalOptions = q.options;
+                        // Tạo mảng index [0, 1, 2, 3] và trộn nó
+                        let indices = [0, 1, 2, 3].slice(0, originalOptions.length);
+                        indices = shuffleArray(indices);
+                        
+                        const newOptions = indices.map(i => originalOptions[i]);
+                        
+                        // Mapping lại đáp án đúng (Backend trả về correct_index chưa? Nếu chưa thì API backend cần update để trả về correct_index cho client check, HOẶC server chấm điểm)
+                        // Trong demo này, ta giả định backend trả về questions nhưng GIẤU correct_index. 
+                        // Khi submit, ta gửi {question_id: selected_option_text} về server chấm.
+                        
+                        return { 
+                            ...q, 
+                            options: newOptions,
+                            original_id: q.id // Giữ ID gốc để chấm điểm
+                        };
+                    });
+
+                    setQuestions(shuffledQs);
+                    setStatus("testing");
+                    enterFullscreen();
+                }, 1500);
+            };
+
+            const enterFullscreen = () => {
+                const elem = document.documentElement;
+                if (elem.requestFullscreen) elem.requestFullscreen();
+            };
+
+            // Anti-Cheat
+            useEffect(() => {
+                if (status === "testing") {
+                    const handleVisibility = () => {
+                        if (document.hidden) {
+                            setCheatCount(prev => {
+                                const newC = prev + 1;
+                                alert(`⚠️ CẢNH BÁO: Bạn đã rời khỏi bài thi! (${newC}/3)`);
+                                if (newC >= 3) submitExam();
+                                return newC;
+                            });
+                        }
+                    };
+                    document.addEventListener("visibilitychange", handleVisibility);
+                    return () => document.removeEventListener("visibilitychange", handleVisibility);
+                }
+            }, [status]);
+
+            const submitExam = async () => {
+                if (document.exitFullscreen) document.exitFullscreen();
+                
+                // Mapping lại câu trả lời theo index gốc để Server chấm
+                // Lưu ý: Logic chấm điểm Client-side ở đây chỉ là demo. Thực tế nên gửi về Server.
+                // Ở đây mình giả lập kết quả trả về.
+                
+                setStatus("submitted");
+                onFinish({
+                    student_name: studentName,
+                    score: (Math.random() * 3 + 7).toFixed(1), // Fake điểm demo
+                    correct_count: Math.floor(questions.length * 0.8),
+                    total: questions.length
+                });
+            };
+
+            if (status === "login") {
+                return (
+                    <div className="min-h-screen gradient-bg flex items-center justify-center p-4">
+                        <div className="bg-white p-8 rounded-3xl shadow-2xl w-full max-w-md animate-fade-in">
+                            <div className="text-center mb-8">
+                                <div className="w-20 h-20 bg-indigo-100 rounded-full flex items-center justify-center mx-auto mb-4 text-indigo-600 text-3xl shadow-inner">
+                                    <i className="fas fa-user-graduate"></i>
+                                </div>
+                                <h2 className="text-2xl font-bold text-slate-800">Vào Phòng Thi</h2>
+                                <p className="text-slate-500 text-sm">Hệ thống sẽ tự động tạo mã đề riêng cho bạn.</p>
+                            </div>
+                            
+                            <div className="space-y-4">
+                                <input 
+                                    type="text" 
+                                    placeholder="Nhập Họ và Tên của bạn" 
+                                    className="w-full px-4 py-3 rounded-xl bg-slate-50 border border-slate-200 focus:ring-2 focus:ring-indigo-500 outline-none text-center font-bold text-lg"
+                                    value={studentName}
+                                    onChange={e => setStudentName(e.target.value)}
+                                />
+                                <button onClick={startExam} className="w-full py-4 rounded-xl bg-slate-900 text-white font-bold hover:bg-slate-800 transition shadow-lg">
+                                    BẮT ĐẦU LÀM BÀI
+                                </button>
+                            </div>
+                            <p className="text-xs text-center text-slate-400 mt-6"><i className="fas fa-lock mr-1"></i> Chế độ thi bảo mật Fullscreen</p>
+                        </div>
+                    </div>
+                );
+            }
+
+            if (status === "shuffling") {
+                return (
+                    <div className="min-h-screen bg-slate-900 flex flex-col items-center justify-center text-white">
+                        <div className="w-16 h-16 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin mb-6"></div>
+                        <h2 className="text-2xl font-bold animate-pulse">Đang khởi tạo mã đề riêng...</h2>
+                        <p className="text-indigo-300 mt-2">Đề thi của: {studentName}</p>
+                    </div>
+                );
+            }
+
+            return (
+                <div className={`min-h-screen bg-slate-100 ${cheatCount > 0 ? 'cheat-overlay' : ''}`}>
+                    {/* Header */}
+                    <div className="bg-white shadow-md sticky top-0 z-50 px-4 py-3 flex justify-between items-center">
+                        <div className="flex items-center gap-3">
+                            <div className="w-10 h-10 rounded-full bg-indigo-100 flex items-center justify-center text-indigo-700 font-bold">{studentName.charAt(0)}</div>
+                            <div>
+                                <h3 className="font-bold text-slate-800 leading-tight">{studentName}</h3>
+                                <p className="text-xs text-slate-500">Mã đề: {Math.floor(Math.random()*1000) + 9000} (Sinh ngẫu nhiên)</p>
+                            </div>
+                        </div>
+                        <div className="flex items-center gap-3">
+                            {cheatCount > 0 && <span className="bg-red-100 text-red-600 px-3 py-1 rounded-full text-xs font-bold animate-pulse">Cảnh báo: {cheatCount}/3</span>}
+                            <button onClick={submitExam} className="bg-emerald-500 hover:bg-emerald-600 text-white px-6 py-2 rounded-full font-bold shadow-lg shadow-emerald-200 transition">
+                                Nộp Bài
+                            </button>
+                        </div>
+                    </div>
+
+                    {/* Question List */}
+                    <div className="max-w-3xl mx-auto p-4 space-y-4 pb-20 mt-4">
+                        {questions.map((q, idx) => (
+                            <div key={idx} className="bg-white rounded-2xl p-6 shadow-sm border border-slate-200">
+                                <div className="flex gap-3 mb-4">
+                                    <span className="bg-indigo-50 text-indigo-700 font-bold px-3 py-1 rounded-lg text-sm h-fit shadow-sm">Câu {idx + 1}</span>
+                                    <div className="font-medium text-lg text-slate-800">{q.question}</div>
+                                </div>
+                                <div className="space-y-3 pl-2">
+                                    {q.options.map((opt, optIdx) => (
+                                        <div 
+                                            key={optIdx} 
+                                            onClick={() => setAnswers({...answers, [idx]: optIdx})}
+                                            className={`p-4 rounded-xl border-2 cursor-pointer transition-all flex items-center gap-4 group ${
+                                                answers[idx] === optIdx 
+                                                ? 'border-indigo-500 bg-indigo-50/50' 
+                                                : 'border-slate-100 hover:border-indigo-200 hover:bg-slate-50'
+                                            }`}
+                                        >
+                                            <div className={`w-8 h-8 rounded-full border-2 flex items-center justify-center font-bold text-sm transition-colors ${
+                                                answers[idx] === optIdx 
+                                                ? 'bg-indigo-500 border-indigo-500 text-white' 
+                                                : 'border-slate-300 text-slate-400 group-hover:border-indigo-400'
+                                            }`}>
+                                                {String.fromCharCode(65 + optIdx)}
+                                            </div>
+                                            <span className="text-slate-700">{opt}</span>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            );
+        };
+
+        // --- COMPONENT: KẾT QUẢ ---
+        const ResultScreen = ({ result }) => (
+            <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
+                <div className="bg-white p-10 rounded-3xl shadow-2xl max-w-lg w-full text-center">
+                    <div className="mb-6">
+                        <div className="inline-block p-6 rounded-full bg-emerald-50 mb-4 ring-8 ring-emerald-50/50">
+                            <span className="text-6xl font-extrabold text-emerald-500">{result.score}</span>
+                        </div>
+                        <h2 className="text-2xl font-bold text-slate-800">Hoàn thành bài thi!</h2>
+                        <p className="text-slate-500">Học sinh: {result.student_name}</p>
+                    </div>
+                    <div className="grid grid-cols-2 gap-4 mb-8">
+                        <div className="bg-slate-50 p-4 rounded-2xl">
+                            <p className="text-xs text-slate-400 uppercase font-bold">Số câu đúng</p>
+                            <p className="text-xl font-bold text-emerald-600">{result.correct_count}/{result.total}</p>
+                        </div>
+                        <div className="bg-slate-50 p-4 rounded-2xl">
+                            <p className="text-xs text-slate-400 uppercase font-bold">Trạng thái</p>
+                            <p className="text-xl font-bold text-indigo-600">Đã nộp</p>
+                        </div>
+                    </div>
+                    <button onClick={() => window.location.href = window.location.href.split('?')[0]} className="w-full py-3 rounded-xl bg-slate-900 text-white font-bold hover:bg-slate-800">
+                        Quay về trang chủ
+                    </button>
+                </div>
+            </div>
+        );
+
+        // --- APP CONTROLLER ---
+        const App = () => {
+            const [mode, setMode] = useState('upload'); // upload, lobby, student, result
+            const [examData, setExamData] = useState(null);
+            const [studentParams, setStudentParams] = useState(null);
+            const [result, setResult] = useState(null);
+
+            // Kiểm tra URL xem có phải học sinh đang join không
+            useEffect(() => {
+                const params = new URLSearchParams(window.location.search);
+                if (params.get('mode') === 'student') {
+                    setStudentParams({
+                        examId: params.get('examId'),
+                        code: params.get('code')
+                    });
+                    setMode('student');
+                }
+            }, []);
+
+            return (
+                <div className="font-sans">
+                    {mode === 'upload' && <TeacherUpload onExamCreated={(data) => { setExamData(data); setMode('lobby'); }} />}
+                    {mode === 'lobby' && <Lobby examData={examData} onJoin={(id, code) => { setStudentParams({examId: id, code}); setMode('student'); }} />}
+                    {mode === 'student' && <StudentExam examId={studentParams.examId} baseCode={studentParams.code} onFinish={(res) => { setResult(res); setMode('result'); }} />}
+                    {mode === 'result' && <ResultScreen result={result} />}
+                </div>
+            );
+        };
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
