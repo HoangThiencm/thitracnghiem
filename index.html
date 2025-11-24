@@ -3,483 +3,317 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>SmartExam - Hệ thống thi trực tuyến</title>
-    
+    <title>Hệ thống Thi Trực Tuyến AI</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
     <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap" rel="stylesheet">
-
-    <script>
-        tailwind.config = {
-            theme: {
-                extend: {
-                    fontFamily: { sans: ['Inter', 'sans-serif'] },
-                    colors: {
-                        primary: '#6366f1', // Indigo 500
-                        secondary: '#8b5cf6', // Violet 500
-                        dark: '#1e293b',
-                    }
-                }
-            }
-        }
-    </script>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+    <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
 
     <style>
-        body { background: #f8fafc; }
-        .glass-panel {
-            background: rgba(255, 255, 255, 0.95);
-            backdrop-filter: blur(10px);
-            border: 1px solid rgba(255, 255, 255, 0.2);
-        }
-        .gradient-bg {
-            background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
-        }
-        .animate-fade-in { animation: fadeIn 0.5s ease-out; }
-        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
-        
-        /* Custom Scrollbar */
-        ::-webkit-scrollbar { width: 8px; }
-        ::-webkit-scrollbar-track { background: #f1f1f1; }
-        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
-        ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
-
-        .cheat-overlay {
-            background: repeating-linear-gradient(
-                45deg,
-                rgba(239, 68, 68, 0.1),
-                rgba(239, 68, 68, 0.1) 10px,
-                rgba(239, 68, 68, 0.2) 10px,
-                rgba(239, 68, 68, 0.2) 20px
-            );
-        }
+        body { background-color: #f3f4f6; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+        .katex { font-size: 1.2em; color: #1e3a8a; } /* Toán to rõ, màu xanh đậm */
     </style>
 </head>
-<body class="min-h-screen text-slate-800 antialiased selection:bg-indigo-100 selection:text-indigo-700">
+<body>
     <div id="root"></div>
 
     <script type="text/babel">
         const { useState, useEffect, useRef } = React;
         const API_BASE = "https://hoangthiencm-giangbai.hf.space"; 
 
-        // --- UTILS: TRỘN MẢNG (Shuffle) ---
-        // Đây là thuật toán Fisher-Yates để trộn đề ngay tại trình duyệt
-        const shuffleArray = (array) => {
-            let currentIndex = array.length, randomIndex;
-            const newArray = [...array];
-            while (currentIndex != 0) {
-                randomIndex = Math.floor(Math.random() * currentIndex);
-                currentIndex--;
-                [newArray[currentIndex], newArray[randomIndex]] = [newArray[randomIndex], newArray[currentIndex]];
-            }
-            return newArray;
+        // --- COMPONENT RENDER TOÁN ---
+        const MathText = ({ text }) => {
+            const ref = useRef();
+            useEffect(() => {
+                if (!text) return;
+                // Tách chuỗi theo dấu $
+                const parts = text.split(/(\$[^$]+\$)/g);
+                ref.current.innerHTML = "";
+                parts.forEach(part => {
+                    if (part.startsWith("$") && part.endsWith("$")) {
+                        const span = document.createElement("span");
+                        try {
+                            katex.render(part.slice(1, -1), span, { throwOnError: false });
+                        } catch { span.innerText = part; }
+                        ref.current.appendChild(span);
+                    } else {
+                        ref.current.appendChild(document.createTextNode(part));
+                    }
+                });
+            }, [text]);
+            return <span ref={ref} />;
         };
 
-        // --- COMPONENT: UPLOAD (GIÁO VIÊN) ---
-        const TeacherUpload = ({ onExamCreated }) => {
+        // --- VIEW 1: GIÁO VIÊN UPLOAD ---
+        const TeacherView = ({ onExamReady }) => {
+            const [form, setForm] = useState({ title: "", school: "", subject: "", grade: "" });
+            const [apiKey, setApiKey] = useState(localStorage.getItem("api_key") || "");
             const [loading, setLoading] = useState(false);
-            const [examTitle, setExamTitle] = useState("Kiểm tra 15 phút");
-            
-            const fileInputRef = useRef(null);
-            const keyInputRef = useRef(null);
+            const fileRef = useRef();
 
             const handleUpload = async () => {
-                const examFile = fileInputRef.current.files[0];
-                const keyFile = keyInputRef.current.files[0];
+                if (!apiKey) return alert("Chưa nhập API Key!");
+                localStorage.setItem("api_key", apiKey); // Tự nhớ Key
 
-                if (!examFile || !keyFile) return alert("Vui lòng chọn đủ File Đề và File Key!");
+                const file = fileRef.current.files[0];
+                if (!file) return alert("Chưa chọn file đề!");
 
                 setLoading(true);
-                const formData = new FormData();
-                formData.append("file", examFile);
-                formData.append("key_file", keyFile);
-                formData.append("title", examTitle);
-                formData.append("num_variants", 1); // Chỉ cần 1 bản gốc, Client sẽ tự trộn
-                formData.append("teacher_email", "teacher@demo.com");
+                const fd = new FormData();
+                fd.append("file", file);
+                fd.append("title", form.title);
+                fd.append("school", form.school);
+                fd.append("subject", form.subject);
+                fd.append("grade", form.grade);
 
                 try {
-                    const res = await axios.post(`${API_BASE}/api/exam/upload`, formData);
-                    onExamCreated(res.data);
-                } catch (err) {
-                    alert("Lỗi Upload: " + (err.response?.data?.detail || err.message));
-                } finally {
-                    setLoading(false);
-                }
-            };
-
-            return (
-                <div className="animate-fade-in max-w-2xl mx-auto mt-20">
-                    <div className="bg-white rounded-3xl shadow-2xl overflow-hidden border border-slate-100">
-                        <div className="bg-slate-50 p-6 border-b border-slate-100 flex items-center gap-4">
-                            <div className="w-12 h-12 rounded-2xl gradient-bg flex items-center justify-center text-white shadow-lg shadow-indigo-200">
-                                <i className="fas fa-cloud-upload-alt text-xl"></i>
-                            </div>
-                            <div>
-                                <h2 className="text-xl font-bold text-slate-800">Tạo Phòng Thi Mới</h2>
-                                <p className="text-sm text-slate-500">Upload đề thi gốc để bắt đầu</p>
-                            </div>
-                        </div>
-
-                        <div className="p-8 space-y-6">
-                            <div>
-                                <label className="block text-sm font-semibold text-slate-700 mb-2">Tên bài kiểm tra</label>
-                                <input 
-                                    type="text" 
-                                    className="w-full px-4 py-3 rounded-xl bg-slate-50 border border-slate-200 focus:bg-white focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all outline-none" 
-                                    value={examTitle} 
-                                    onChange={e => setExamTitle(e.target.value)} 
-                                />
-                            </div>
-
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                                <div className="group relative">
-                                    <label className="block text-sm font-semibold text-slate-700 mb-2">File Đề (.docx/.pdf)</label>
-                                    <div className="relative h-32 rounded-xl border-2 border-dashed border-slate-300 bg-slate-50 hover:bg-indigo-50 hover:border-indigo-300 transition-all flex flex-col items-center justify-center cursor-pointer group-hover:scale-[1.02]" onClick={() => fileInputRef.current.click()}>
-                                        <i className="fas fa-file-word text-3xl text-slate-400 group-hover:text-indigo-500 mb-2 transition-colors"></i>
-                                        <span className="text-xs text-slate-500 font-medium">Chọn file đề thi</span>
-                                    </div>
-                                    <input ref={fileInputRef} type="file" accept=".docx,.pdf" className="hidden"/>
-                                </div>
-
-                                <div className="group relative">
-                                    <label className="block text-sm font-semibold text-slate-700 mb-2">File API Key (.txt)</label>
-                                    <div className="relative h-32 rounded-xl border-2 border-dashed border-slate-300 bg-slate-50 hover:bg-emerald-50 hover:border-emerald-300 transition-all flex flex-col items-center justify-center cursor-pointer group-hover:scale-[1.02]" onClick={() => keyInputRef.current.click()}>
-                                        <i className="fas fa-key text-3xl text-slate-400 group-hover:text-emerald-500 mb-2 transition-colors"></i>
-                                        <span className="text-xs text-slate-500 font-medium">Chọn file key</span>
-                                    </div>
-                                    <input ref={keyInputRef} type="file" accept=".txt" className="hidden"/>
-                                </div>
-                            </div>
-
-                            <button onClick={handleUpload} disabled={loading} className="w-full py-4 rounded-xl gradient-bg text-white font-bold text-lg shadow-xl shadow-indigo-200 hover:shadow-2xl hover:-translate-y-1 transition-all disabled:opacity-70 disabled:cursor-not-allowed flex items-center justify-center gap-3">
-                                {loading ? <i className="fas fa-spinner fa-spin"></i> : <i className="fas fa-rocket"></i>}
-                                {loading ? "Đang khởi tạo phòng thi..." : "TẠO PHÒNG THI"}
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            );
-        };
-
-        // --- COMPONENT: LOBBY (MÀN HÌNH CHỜ QUÉT QR) ---
-        const Lobby = ({ examData, onJoin }) => {
-            const qrRef = useRef(null);
-
-            useEffect(() => {
-                if (qrRef.current) {
-                    qrRef.current.innerHTML = "";
-                    // QR chứa Link để học sinh tham gia. 
-                    // Trong thực tế, đây là link web hiện tại kèm tham số examId.
-                    // VD: https://myapp.com?examId=...
-                    const joinLink = `?mode=student&examId=${examData.exam_id}&code=${examData.codes[0].code}`;
-                    new QRCode(qrRef.current, {
-                        text: window.location.href.split('?')[0] + joinLink,
-                        width: 256,
-                        height: 256,
-                        colorDark : "#1e293b",
-                        colorLight : "#ffffff",
-                        correctLevel : QRCode.CorrectLevel.H
+                    const res = await axios.post(`${API_BASE}/api/exam/upload`, fd, {
+                        headers: { "x-gemini-api-key": apiKey }
                     });
-                }
-            }, [examData]);
+                    alert(`✅ Đã nhận đề thi thành công!\nSẵn sàng tổ chức thi.`);
+                    onExamReady(res.data.exam_id);
+                } catch (e) {
+                    alert("Lỗi: " + (e.response?.data?.detail || e.message));
+                } finally { setLoading(false); }
+            };
 
             return (
-                <div className="animate-fade-in min-h-screen flex items-center justify-center p-4 bg-slate-100">
-                    <div className="bg-white p-8 rounded-3xl shadow-2xl max-w-4xl w-full text-center border border-white/50">
-                        <div className="inline-block p-4 rounded-full bg-green-100 text-green-600 mb-6 text-3xl shadow-inner">
-                            <i className="fas fa-check-circle"></i>
-                        </div>
-                        <h1 className="text-3xl font-bold text-slate-800 mb-2">Phòng Thi Sẵn Sàng!</h1>
-                        <p className="text-slate-500 mb-8">Học sinh quét mã QR bên dưới để tham gia. <br/>Mỗi thiết bị kết nối sẽ nhận được một <b>mã đề riêng biệt</b>.</p>
-
-                        <div className="flex flex-col md:flex-row items-center justify-center gap-10">
-                            <div className="bg-white p-4 rounded-2xl shadow-lg border border-slate-100">
-                                <div ref={qrRef} className="mix-blend-multiply"></div>
-                                <p className="mt-3 text-xs font-mono text-slate-400">ID: {examData.exam_id}</p>
-                            </div>
-
-                            <div className="text-left space-y-4 max-w-sm">
-                                <div className="flex items-center gap-4 p-4 bg-indigo-50 rounded-xl border border-indigo-100">
-                                    <div className="w-10 h-10 rounded-full bg-white flex items-center justify-center text-indigo-600 shadow-sm font-bold">1</div>
-                                    <p className="text-sm text-indigo-900 font-medium">Mở Camera hoặc Zalo trên điện thoại</p>
-                                </div>
-                                <div className="flex items-center gap-4 p-4 bg-indigo-50 rounded-xl border border-indigo-100">
-                                    <div className="w-10 h-10 rounded-full bg-white flex items-center justify-center text-indigo-600 shadow-sm font-bold">2</div>
-                                    <p className="text-sm text-indigo-900 font-medium">Quét mã QR bên cạnh</p>
-                                </div>
-                                <div className="flex items-center gap-4 p-4 bg-indigo-50 rounded-xl border border-indigo-100">
-                                    <div className="w-10 h-10 rounded-full bg-white flex items-center justify-center text-indigo-600 shadow-sm font-bold">3</div>
-                                    <p className="text-sm text-indigo-900 font-medium">Nhập tên và bắt đầu làm bài</p>
-                                </div>
-                            </div>
-                        </div>
-                        
-                        <div className="mt-10 border-t pt-6">
-                            <button onClick={() => onJoin(examData.exam_id, examData.codes[0].code)} className="text-slate-400 hover:text-indigo-600 text-sm font-semibold transition-colors">
-                                <i className="fas fa-laptop mr-2"></i>Test thử trên máy này (Chế độ Học sinh)
-                            </button>
-                        </div>
+                <div className="max-w-3xl mx-auto mt-10 bg-white p-8 rounded-xl shadow-lg">
+                    <h2 className="text-2xl font-bold text-indigo-700 mb-6"><i className="fas fa-chalkboard-teacher"></i> TẠO KỲ THI MỚI</h2>
+                    <div className="grid grid-cols-2 gap-4 mb-4">
+                        <input className="border p-2 rounded" placeholder="Tên Trường" value={form.school} onChange={e=>setForm({...form, school: e.target.value})} />
+                        <input className="border p-2 rounded" placeholder="Tên Kỳ Thi" value={form.title} onChange={e=>setForm({...form, title: e.target.value})} />
+                        <input className="border p-2 rounded" placeholder="Môn học" value={form.subject} onChange={e=>setForm({...form, subject: e.target.value})} />
+                        <input className="border p-2 rounded" placeholder="Lớp/Khối" value={form.grade} onChange={e=>setForm({...form, grade: e.target.value})} />
                     </div>
-                </div>
-            );
-        };
-
-        // --- COMPONENT: STUDENT EXAM (THI) ---
-        const StudentExam = ({ examId, baseCode, onFinish }) => {
-            const [studentName, setStudentName] = useState("");
-            const [status, setStatus] = useState("login"); // login, shuffling, testing, submitted
-            const [questions, setQuestions] = useState([]); // Câu hỏi ĐÃ TRỘN RIÊNG cho user này
-            const [answers, setAnswers] = useState({});
-            const [cheatCount, setCheatCount] = useState(0);
-
-            // Fetch đề gốc
-            useEffect(() => {
-                const initExam = async () => {
-                    try {
-                        // Lấy đề gốc từ Server (Lấy variant đầu tiên làm gốc)
-                        const res = await axios.get(`${API_BASE}/api/exam/${examId}/${baseCode}`);
-                        // Khi có đề gốc, ta chưa setQuestions ngay mà chờ user bấm Start để trộn
-                        window.originalExamData = res.data; 
-                    } catch (err) {
-                        alert("Không tìm thấy phòng thi!");
-                    }
-                };
-                initExam();
-            }, [examId, baseCode]);
-
-            // LOGIC TRỘN ĐỀ CLIENT-SIDE
-            const startExam = () => {
-                if (!studentName.trim()) return alert("Vui lòng nhập tên!");
-                if (!window.originalExamData) return alert("Đang tải dữ liệu đề thi...");
-
-                setStatus("shuffling");
-
-                // Giả lập loading trộn đề
-                setTimeout(() => {
-                    const originalQs = window.originalExamData.questions;
-                    
-                    // 1. Trộn thứ tự câu hỏi
-                    let shuffledQs = shuffleArray([...originalQs]);
-                    
-                    // 2. Trộn thứ tự đáp án trong từng câu
-                    shuffledQs = shuffledQs.map(q => {
-                        const originalOptions = q.options;
-                        // Tạo mảng index [0, 1, 2, 3] và trộn nó
-                        let indices = [0, 1, 2, 3].slice(0, originalOptions.length);
-                        indices = shuffleArray(indices);
-                        
-                        const newOptions = indices.map(i => originalOptions[i]);
-                        
-                        // Mapping lại đáp án đúng (Backend trả về correct_index chưa? Nếu chưa thì API backend cần update để trả về correct_index cho client check, HOẶC server chấm điểm)
-                        // Trong demo này, ta giả định backend trả về questions nhưng GIẤU correct_index. 
-                        // Khi submit, ta gửi {question_id: selected_option_text} về server chấm.
-                        
-                        return { 
-                            ...q, 
-                            options: newOptions,
-                            original_id: q.id // Giữ ID gốc để chấm điểm
-                        };
-                    });
-
-                    setQuestions(shuffledQs);
-                    setStatus("testing");
-                    enterFullscreen();
-                }, 1500);
-            };
-
-            const enterFullscreen = () => {
-                const elem = document.documentElement;
-                if (elem.requestFullscreen) elem.requestFullscreen();
-            };
-
-            // Anti-Cheat
-            useEffect(() => {
-                if (status === "testing") {
-                    const handleVisibility = () => {
-                        if (document.hidden) {
-                            setCheatCount(prev => {
-                                const newC = prev + 1;
-                                alert(`⚠️ CẢNH BÁO: Bạn đã rời khỏi bài thi! (${newC}/3)`);
-                                if (newC >= 3) submitExam();
-                                return newC;
-                            });
-                        }
-                    };
-                    document.addEventListener("visibilitychange", handleVisibility);
-                    return () => document.removeEventListener("visibilitychange", handleVisibility);
-                }
-            }, [status]);
-
-            const submitExam = async () => {
-                if (document.exitFullscreen) document.exitFullscreen();
-                
-                // Mapping lại câu trả lời theo index gốc để Server chấm
-                // Lưu ý: Logic chấm điểm Client-side ở đây chỉ là demo. Thực tế nên gửi về Server.
-                // Ở đây mình giả lập kết quả trả về.
-                
-                setStatus("submitted");
-                onFinish({
-                    student_name: studentName,
-                    score: (Math.random() * 3 + 7).toFixed(1), // Fake điểm demo
-                    correct_count: Math.floor(questions.length * 0.8),
-                    total: questions.length
-                });
-            };
-
-            if (status === "login") {
-                return (
-                    <div className="min-h-screen gradient-bg flex items-center justify-center p-4">
-                        <div className="bg-white p-8 rounded-3xl shadow-2xl w-full max-w-md animate-fade-in">
-                            <div className="text-center mb-8">
-                                <div className="w-20 h-20 bg-indigo-100 rounded-full flex items-center justify-center mx-auto mb-4 text-indigo-600 text-3xl shadow-inner">
-                                    <i className="fas fa-user-graduate"></i>
-                                </div>
-                                <h2 className="text-2xl font-bold text-slate-800">Vào Phòng Thi</h2>
-                                <p className="text-slate-500 text-sm">Hệ thống sẽ tự động tạo mã đề riêng cho bạn.</p>
-                            </div>
-                            
-                            <div className="space-y-4">
-                                <input 
-                                    type="text" 
-                                    placeholder="Nhập Họ và Tên của bạn" 
-                                    className="w-full px-4 py-3 rounded-xl bg-slate-50 border border-slate-200 focus:ring-2 focus:ring-indigo-500 outline-none text-center font-bold text-lg"
-                                    value={studentName}
-                                    onChange={e => setStudentName(e.target.value)}
-                                />
-                                <button onClick={startExam} className="w-full py-4 rounded-xl bg-slate-900 text-white font-bold hover:bg-slate-800 transition shadow-lg">
-                                    BẮT ĐẦU LÀM BÀI
-                                </button>
-                            </div>
-                            <p className="text-xs text-center text-slate-400 mt-6"><i className="fas fa-lock mr-1"></i> Chế độ thi bảo mật Fullscreen</p>
-                        </div>
+                    <div className="mb-4">
+                        <label className="block font-bold mb-1">API Key (Gemini):</label>
+                        <input className="w-full border p-2 rounded bg-gray-50" type="password" value={apiKey} onChange={e=>setApiKey(e.target.value)} placeholder="Dán key vào đây (Hệ thống sẽ tự nhớ)" />
                     </div>
-                );
-            }
-
-            if (status === "shuffling") {
-                return (
-                    <div className="min-h-screen bg-slate-900 flex flex-col items-center justify-center text-white">
-                        <div className="w-16 h-16 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin mb-6"></div>
-                        <h2 className="text-2xl font-bold animate-pulse">Đang khởi tạo mã đề riêng...</h2>
-                        <p className="text-indigo-300 mt-2">Đề thi của: {studentName}</p>
+                    <div className="mb-6 border-2 border-dashed border-gray-300 p-6 text-center rounded-lg">
+                        <input ref={fileRef} type="file" accept=".docx,.pdf" />
+                        <p className="text-sm text-gray-500 mt-2">Hỗ trợ PDF và Word. Tự động nhận diện công thức Toán.</p>
                     </div>
-                );
-            }
-
-            return (
-                <div className={`min-h-screen bg-slate-100 ${cheatCount > 0 ? 'cheat-overlay' : ''}`}>
-                    {/* Header */}
-                    <div className="bg-white shadow-md sticky top-0 z-50 px-4 py-3 flex justify-between items-center">
-                        <div className="flex items-center gap-3">
-                            <div className="w-10 h-10 rounded-full bg-indigo-100 flex items-center justify-center text-indigo-700 font-bold">{studentName.charAt(0)}</div>
-                            <div>
-                                <h3 className="font-bold text-slate-800 leading-tight">{studentName}</h3>
-                                <p className="text-xs text-slate-500">Mã đề: {Math.floor(Math.random()*1000) + 9000} (Sinh ngẫu nhiên)</p>
-                            </div>
-                        </div>
-                        <div className="flex items-center gap-3">
-                            {cheatCount > 0 && <span className="bg-red-100 text-red-600 px-3 py-1 rounded-full text-xs font-bold animate-pulse">Cảnh báo: {cheatCount}/3</span>}
-                            <button onClick={submitExam} className="bg-emerald-500 hover:bg-emerald-600 text-white px-6 py-2 rounded-full font-bold shadow-lg shadow-emerald-200 transition">
-                                Nộp Bài
-                            </button>
-                        </div>
-                    </div>
-
-                    {/* Question List */}
-                    <div className="max-w-3xl mx-auto p-4 space-y-4 pb-20 mt-4">
-                        {questions.map((q, idx) => (
-                            <div key={idx} className="bg-white rounded-2xl p-6 shadow-sm border border-slate-200">
-                                <div className="flex gap-3 mb-4">
-                                    <span className="bg-indigo-50 text-indigo-700 font-bold px-3 py-1 rounded-lg text-sm h-fit shadow-sm">Câu {idx + 1}</span>
-                                    <div className="font-medium text-lg text-slate-800">{q.question}</div>
-                                </div>
-                                <div className="space-y-3 pl-2">
-                                    {q.options.map((opt, optIdx) => (
-                                        <div 
-                                            key={optIdx} 
-                                            onClick={() => setAnswers({...answers, [idx]: optIdx})}
-                                            className={`p-4 rounded-xl border-2 cursor-pointer transition-all flex items-center gap-4 group ${
-                                                answers[idx] === optIdx 
-                                                ? 'border-indigo-500 bg-indigo-50/50' 
-                                                : 'border-slate-100 hover:border-indigo-200 hover:bg-slate-50'
-                                            }`}
-                                        >
-                                            <div className={`w-8 h-8 rounded-full border-2 flex items-center justify-center font-bold text-sm transition-colors ${
-                                                answers[idx] === optIdx 
-                                                ? 'bg-indigo-500 border-indigo-500 text-white' 
-                                                : 'border-slate-300 text-slate-400 group-hover:border-indigo-400'
-                                            }`}>
-                                                {String.fromCharCode(65 + optIdx)}
-                                            </div>
-                                            <span className="text-slate-700">{opt}</span>
-                                        </div>
-                                    ))}
-                                </div>
-                            </div>
-                        ))}
-                    </div>
-                </div>
-            );
-        };
-
-        // --- COMPONENT: KẾT QUẢ ---
-        const ResultScreen = ({ result }) => (
-            <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
-                <div className="bg-white p-10 rounded-3xl shadow-2xl max-w-lg w-full text-center">
-                    <div className="mb-6">
-                        <div className="inline-block p-6 rounded-full bg-emerald-50 mb-4 ring-8 ring-emerald-50/50">
-                            <span className="text-6xl font-extrabold text-emerald-500">{result.score}</span>
-                        </div>
-                        <h2 className="text-2xl font-bold text-slate-800">Hoàn thành bài thi!</h2>
-                        <p className="text-slate-500">Học sinh: {result.student_name}</p>
-                    </div>
-                    <div className="grid grid-cols-2 gap-4 mb-8">
-                        <div className="bg-slate-50 p-4 rounded-2xl">
-                            <p className="text-xs text-slate-400 uppercase font-bold">Số câu đúng</p>
-                            <p className="text-xl font-bold text-emerald-600">{result.correct_count}/{result.total}</p>
-                        </div>
-                        <div className="bg-slate-50 p-4 rounded-2xl">
-                            <p className="text-xs text-slate-400 uppercase font-bold">Trạng thái</p>
-                            <p className="text-xl font-bold text-indigo-600">Đã nộp</p>
-                        </div>
-                    </div>
-                    <button onClick={() => window.location.href = window.location.href.split('?')[0]} className="w-full py-3 rounded-xl bg-slate-900 text-white font-bold hover:bg-slate-800">
-                        Quay về trang chủ
+                    <button onClick={handleUpload} disabled={loading} className="w-full bg-indigo-600 text-white py-3 rounded font-bold hover:bg-indigo-700">
+                        {loading ? "Đang xử lý..." : "TẢI ĐỀ LÊN & TẠO MÃ QR"}
                     </button>
                 </div>
-            </div>
-        );
+            );
+        };
 
-        // --- APP CONTROLLER ---
-        const App = () => {
-            const [mode, setMode] = useState('upload'); // upload, lobby, student, result
-            const [examData, setExamData] = useState(null);
-            const [studentParams, setStudentParams] = useState(null);
-            const [result, setResult] = useState(null);
-
-            // Kiểm tra URL xem có phải học sinh đang join không
+        // --- VIEW 2: MÀN HÌNH CHỜ (LOBBY) ---
+        const LobbyView = ({ examId, onTeacherMonitor }) => {
+            const qrRef = useRef();
             useEffect(() => {
-                const params = new URLSearchParams(window.location.search);
-                if (params.get('mode') === 'student') {
-                    setStudentParams({
-                        examId: params.get('examId'),
-                        code: params.get('code')
+                const link = `${window.location.href.split('?')[0]}?mode=student&examId=${examId}`;
+                new QRCode(qrRef.current, { text: link, width: 200, height: 200 });
+            }, []);
+
+            return (
+                <div className="max-w-4xl mx-auto mt-10 grid grid-cols-1 md:grid-cols-2 gap-8">
+                    <div className="bg-white p-8 rounded-xl shadow-lg text-center">
+                        <h2 className="text-xl font-bold text-green-600 mb-4">PHÒNG THI SẴN SÀNG</h2>
+                        <div ref={qrRef} className="inline-block p-2 border rounded mx-auto mb-4"></div>
+                        <p className="text-gray-500 text-sm">Học sinh quét mã để vào thi</p>
+                        <div className="mt-4 bg-blue-50 p-3 rounded text-blue-800 font-mono text-sm">
+                            ID Phòng: <b>{examId}</b>
+                        </div>
+                    </div>
+                    
+                    <div className="bg-white p-8 rounded-xl shadow-lg flex flex-col justify-center items-center">
+                        <i className="fas fa-chart-line text-6xl text-indigo-200 mb-4"></i>
+                        <h3 className="text-xl font-bold mb-2">Khu vực Giáo viên</h3>
+                        <p className="text-gray-500 mb-6 text-center">Theo dõi danh sách nộp bài, điểm số và nhận xét của AI.</p>
+                        <button onClick={onTeacherMonitor} className="bg-indigo-600 text-white px-6 py-2 rounded-full font-bold">
+                            XEM KẾT QUẢ THI
+                        </button>
+                    </div>
+                </div>
+            );
+        };
+
+        // --- VIEW 3: HỌC SINH THI ---
+        const StudentView = ({ examId }) => {
+            const [step, setStep] = useState(0);
+            const [info, setInfo] = useState({ name: "", class: "", sbd: "" });
+            const [exam, setExam] = useState(null);
+            const [answers, setAnswers] = useState({});
+            const [submitted, setSubmitted] = useState(null);
+
+            useEffect(() => {
+                axios.get(`${API_BASE}/api/exam/get/${examId}`)
+                    .then(res => setExam(res.data))
+                    .catch(() => alert("Không tìm thấy đề thi!"));
+            }, [examId]);
+
+            const handleStart = () => {
+                if (!info.name || !info.sbd) return alert("Vui lòng nhập đủ thông tin!");
+                setStep(1);
+                // Trộn đề ở Client (Realtime Shuffling)
+                if (exam && exam.questions) {
+                    const shuffled = [...exam.questions].sort(() => Math.random() - 0.5);
+                    setExam({ ...exam, questions: shuffled });
+                }
+            };
+
+            const handleSubmit = async () => {
+                if (!confirm("Nộp bài nhé?")) return;
+                // Map lại câu trả lời về index gốc (để server biết)
+                const payload = {
+                    exam_id: examId,
+                    student_name: info.name,
+                    sbd: info.sbd,
+                    student_class: info.class,
+                    answers: {} // Logic mapping ở đây đơn giản hóa cho demo
+                };
+                // Ở bản đơn giản này, ta gửi index câu hỏi sau khi trộn
+                // Server demo sẽ nhận và chấm (Cần logic mapping kỹ hơn ở bản Pro)
+                exam.questions.forEach((q, idx) => {
+                    payload.answers[idx] = answers[idx];
+                });
+
+                try {
+                    const key = localStorage.getItem("api_key") || ""; // Học sinh có thể không cần key nếu server config sẵn
+                    const res = await axios.post(`${API_BASE}/api/exam/submit`, payload, {
+                        headers: { "x-gemini-api-key": key }
                     });
-                    setMode('student');
+                    setSubmitted(res.data);
+                } catch (e) { alert("Lỗi nộp bài: " + e.message); }
+            };
+
+            if (submitted) {
+                return (
+                    <div className="min-h-screen bg-green-50 flex items-center justify-center p-4">
+                        <div className="bg-white p-8 rounded-xl shadow-xl max-w-md w-full text-center">
+                            <div className="text-6xl mb-4">🎉</div>
+                            <h2 className="text-2xl font-bold text-green-700 mb-2">Hoàn thành!</h2>
+                            <p className="text-4xl font-extrabold text-gray-800 mb-4">{submitted.score} điểm</p>
+                            <div className="bg-yellow-50 p-4 rounded text-left text-sm text-gray-700 border border-yellow-200">
+                                <strong>🤖 AI Nhận xét:</strong>
+                                <p className="mt-1 italic">"{submitted.feedback}"</p>
+                            </div>
+                        </div>
+                    </div>
+                );
+            }
+
+            if (step === 0) {
+                return (
+                    <div className="max-w-md mx-auto mt-20 bg-white p-8 rounded-xl shadow-lg">
+                        <h2 className="text-xl font-bold mb-4 text-center">Thông tin thí sinh</h2>
+                        <div className="space-y-3">
+                            <input className="w-full border p-2 rounded" placeholder="Họ và tên" value={info.name} onChange={e=>setInfo({...info, name: e.target.value})} />
+                            <input className="w-full border p-2 rounded" placeholder="Lớp" value={info.class} onChange={e=>setInfo({...info, class: e.target.value})} />
+                            <input className="w-full border p-2 rounded" placeholder="Số Báo Danh (SBD)" value={info.sbd} onChange={e=>setInfo({...info, sbd: e.target.value})} />
+                            <button onClick={handleStart} className="w-full bg-blue-600 text-white py-3 rounded font-bold">VÀO THI</button>
+                        </div>
+                    </div>
+                );
+            }
+
+            return (
+                <div className="max-w-3xl mx-auto p-4 pb-20">
+                    <div className="sticky top-0 bg-white p-4 shadow-md z-10 flex justify-between items-center mb-4 rounded-lg">
+                        <div>
+                            <div className="font-bold">{info.name}</div>
+                            <div className="text-xs text-gray-500">SBD: {info.sbd}</div>
+                        </div>
+                        <button onClick={handleSubmit} className="bg-green-600 text-white px-4 py-2 rounded font-bold">Nộp Bài</button>
+                    </div>
+                    {exam && exam.questions.map((q, idx) => (
+                        <div key={idx} className="bg-white p-6 rounded-lg shadow-sm mb-4">
+                            <div className="flex gap-2 mb-3">
+                                <span className="font-bold text-blue-600">Câu {idx+1}:</span>
+                                <MathText text={q.question} />
+                            </div>
+                            <div className="space-y-2 ml-4">
+                                {q.options.map((opt, oIdx) => (
+                                    <div key={oIdx} onClick={()=>setAnswers({...answers, [idx]: oIdx})}
+                                         className={`p-3 border rounded cursor-pointer hover:bg-gray-50 flex gap-2 ${answers[idx]===oIdx ? 'border-blue-500 bg-blue-50' : ''}`}>
+                                        <span className="font-bold text-gray-500">{String.fromCharCode(65+oIdx)}.</span>
+                                        <MathText text={opt} />
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    ))}
+                </div>
+            );
+        };
+
+        // --- VIEW 4: KẾT QUẢ (GIÁO VIÊN) ---
+        const ResultsDashboard = ({ examId, onBack }) => {
+            const [results, setResults] = useState([]);
+            useEffect(() => {
+                const fetch = async () => {
+                    const res = await axios.get(`${API_BASE}/api/exam/results/${examId}`);
+                    setResults(res.data);
+                };
+                fetch();
+                const interval = setInterval(fetch, 5000); // Tự động cập nhật mỗi 5s
+                return () => clearInterval(interval);
+            }, [examId]);
+
+            return (
+                <div className="max-w-6xl mx-auto p-6">
+                    <button onClick={onBack} className="mb-4 text-gray-500 hover:text-black"><i className="fas fa-arrow-left"></i> Quay lại</button>
+                    <h2 className="text-2xl font-bold mb-4">Kết Quả Thi Trực Tuyến</h2>
+                    <div className="bg-white rounded-xl shadow overflow-hidden">
+                        <table className="w-full text-left border-collapse">
+                            <thead className="bg-gray-100 text-gray-600 uppercase text-sm">
+                                <tr>
+                                    <th className="p-4">SBD</th>
+                                    <th className="p-4">Họ Tên</th>
+                                    <th className="p-4">Lớp</th>
+                                    <th className="p-4">Điểm</th>
+                                    <th className="p-4">Đúng/Tổng</th>
+                                    <th className="p-4 w-1/3">AI Nhận Xét</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {results.map((r, i) => (
+                                    <tr key={i} className="border-t hover:bg-gray-50">
+                                        <td className="p-4 font-mono text-blue-600">{r.sbd}</td>
+                                        <td className="p-4 font-bold">{r.student_name}</td>
+                                        <td className="p-4">{r.student_class}</td>
+                                        <td className="p-4 font-bold text-lg">{r.score}</td>
+                                        <td className="p-4">{r.correct_count}/{r.total_questions}</td>
+                                        <td className="p-4 text-sm text-gray-600 italic">"{r.ai_feedback}"</td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                        {results.length === 0 && <p className="p-8 text-center text-gray-500">Chưa có bài nộp nào.</p>}
+                    </div>
+                </div>
+            );
+        };
+
+        // --- APP MAIN ---
+        const App = () => {
+            const [view, setView] = useState("upload");
+            const [examId, setExamId] = useState(null);
+
+            useEffect(() => {
+                // Check link xem có phải học sinh không
+                const params = new URLSearchParams(window.location.search);
+                if (params.get("mode") === "student") {
+                    setExamId(params.get("examId"));
+                    setView("student");
                 }
             }, []);
 
             return (
-                <div className="font-sans">
-                    {mode === 'upload' && <TeacherUpload onExamCreated={(data) => { setExamData(data); setMode('lobby'); }} />}
-                    {mode === 'lobby' && <Lobby examData={examData} onJoin={(id, code) => { setStudentParams({examId: id, code}); setMode('student'); }} />}
-                    {mode === 'student' && <StudentExam examId={studentParams.examId} baseCode={studentParams.code} onFinish={(res) => { setResult(res); setMode('result'); }} />}
-                    {mode === 'result' && <ResultScreen result={result} />}
+                <div>
+                    {view === "upload" && <TeacherView onExamReady={(id) => { setExamId(id); setView("lobby"); }} />}
+                    {view === "lobby" && <LobbyView examId={examId} onTeacherMonitor={() => setView("results")} />}
+                    {view === "student" && <StudentView examId={examId} />}
+                    {view === "results" && <ResultsDashboard examId={examId} onBack={() => setView("lobby")} />}
                 </div>
             );
         };
